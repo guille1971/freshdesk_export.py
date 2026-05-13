@@ -1,42 +1,27 @@
 """
 freshdesk_export_full.py
-Descarga TODOS los tickets de Freshdesk (sin filtro de fecha)
-y los guarda en un Excel + los envía por email.
+Descarga TODOS los tickets de Freshdesk y los guarda en un Excel.
+El archivo se sube como artefacto en GitHub Actions para descarga directa.
 
 Variables de entorno requeridas:
     FRESHDESK_DOMAIN   → tu subdominio (ej: bankinplay)
     FRESHDESK_API_KEY  → tu API key de Freshdesk
-    MAIL_FROM          → email desde el que se envía (Microsoft 365)
-    MAIL_PASSWORD      → contraseña o App Password
-    MAIL_TO            → email destinatario
 """
 
 import os
 import time
-import smtplib
 import requests
 import pandas as pd
 from datetime import datetime, timezone
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email.mime.text import MIMEText
-from email import encoders
 
 # ---------------------------------------------------------------------------
 # Configuración
 # ---------------------------------------------------------------------------
 
-DOMAIN    = os.environ["FRESHDESK_DOMAIN"]
-API_KEY   = os.environ["FRESHDESK_API_KEY"]
-BASE_URL  = f"https://{DOMAIN}.freshdesk.com/api/v2"
-AUTH      = (API_KEY, "X")
-
-MAIL_FROM     = os.environ["MAIL_FROM"]
-MAIL_PASSWORD = os.environ["MAIL_PASSWORD"]
-MAIL_TO       = os.environ["MAIL_TO"]
-
-SMTP_HOST = "smtp.office365.com"
-SMTP_PORT = 587
+DOMAIN   = os.environ["FRESHDESK_DOMAIN"]
+API_KEY  = os.environ["FRESHDESK_API_KEY"]
+BASE_URL = f"https://{DOMAIN}.freshdesk.com/api/v2"
+AUTH     = (API_KEY, "X")
 
 AHORA = datetime.now(timezone.utc)
 
@@ -48,7 +33,7 @@ TIPO_ORIGEN = {
 }
 
 # ---------------------------------------------------------------------------
-# Extracción — SIN filtro de fecha, pagina hasta el final
+# Extracción
 # ---------------------------------------------------------------------------
 
 def get_all_tickets() -> list[dict]:
@@ -72,13 +57,13 @@ def get_all_tickets() -> list[dict]:
             break
 
         all_tickets.extend(tickets)
-        print(f"  Página {page}: {len(tickets)} tickets | Total acumulado: {len(all_tickets)}")
+        print(f"  Página {page}: {len(tickets)} tickets | Total: {len(all_tickets)}")
 
         if len(tickets) < 100:
             break
 
         page += 1
-        time.sleep(0.5)  # Respetar rate limit de Freshdesk
+        time.sleep(0.5)
 
     print(f"✓ Total tickets extraídos: {len(all_tickets)}")
     return all_tickets
@@ -145,53 +130,6 @@ def export_to_excel(rows: list[dict]) -> str:
     return filename
 
 # ---------------------------------------------------------------------------
-# Envío por email
-# ---------------------------------------------------------------------------
-
-def send_email(filename: str, num_tickets: int) -> None:
-    fecha_str = AHORA.strftime("%d/%m/%Y %H:%M")
-
-    msg = MIMEMultipart()
-    msg["From"]    = MAIL_FROM
-    msg["To"]      = MAIL_TO
-    msg["Subject"] = f"Freshdesk · Exportación completa {AHORA.strftime('%d/%m/%Y')} ({num_tickets} tickets)"
-
-    cuerpo = f"""
-    <html><body style="font-family: Calibri, sans-serif; color: #333;">
-      <p>Hola,</p>
-      <p>Adjunto la exportación completa de <strong>todos los tickets</strong> de Freshdesk.</p>
-      <table style="border-collapse:collapse; margin: 16px 0;">
-        <tr>
-          <td style="padding: 6px 16px 6px 0; color:#666;">Total tickets</td>
-          <td style="padding: 6px 0; font-weight:bold;">{num_tickets}</td>
-        </tr>
-        <tr>
-          <td style="padding: 6px 16px 6px 0; color:#666;">Generado el</td>
-          <td style="padding: 6px 0;">{fecha_str} UTC</td>
-        </tr>
-      </table>
-      <p style="color:#999; font-size:12px;">Fuente: Freshdesk API v2</p>
-    </body></html>
-    """
-    msg.attach(MIMEText(cuerpo, "html"))
-
-    with open(filename, "rb") as f:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(f.read())
-    encoders.encode_base64(part)
-    part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
-    msg.attach(part)
-
-    print(f"Enviando email a {MAIL_TO}...")
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as server:
-        server.ehlo()
-        server.starttls()
-        server.ehlo()
-        server.login(MAIL_FROM, MAIL_PASSWORD)
-        server.sendmail(MAIL_FROM, MAIL_TO, msg.as_string())
-    print("✓ Email enviado correctamente.")
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -202,9 +140,9 @@ def main():
 
     tickets  = get_all_tickets()
     rows     = [flatten_ticket(t, agents, groups) for t in tickets]
-    filename = export_to_excel(rows)
-    send_email(filename, len(rows))
+    export_to_excel(rows)
 
 
 if __name__ == "__main__":
     main()
+
