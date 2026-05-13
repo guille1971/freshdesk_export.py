@@ -1,0 +1,51 @@
+# .github/workflows/freshdesk_daily.yml
+#
+# Ejecuta freshdesk_export.py cada día a las 07:00 (hora España)
+# y sube el Excel generado como artefacto descargable.
+#
+# SETUP:
+#   1. Sube este repo a GitHub (puede ser privado)
+#   2. Ve a Settings → Secrets and variables → Actions
+#   3. Añade estos dos secrets:
+#      - FRESHDESK_DOMAIN   → tu subdominio (ej: bankinplay)
+#      - FRESHDESK_API_KEY  → tu API key de Freshdesk
+
+name: Freshdesk Daily Export
+
+on:
+  schedule:
+    # 06:00 UTC = 07:00 España (invierno) / 08:00 (verano)
+    - cron: "0 6 * * *"
+
+  # Permite ejecutarlo manualmente desde GitHub → Actions → Run workflow
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: pip install requests pandas openpyxl
+
+      - name: Ejecutar exportación
+        env:
+          FRESHDESK_DOMAIN:  ${{ secrets.FRESHDESK_DOMAIN }}
+          FRESHDESK_API_KEY: ${{ secrets.FRESHDESK_API_KEY }}
+        run: python freshdesk_export.py
+
+      - name: Subir Excel como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: freshdesk-tickets-${{ github.run_id }}
+          path: freshdesk_tickets_*.xlsx
+          # El archivo estará disponible 30 días para descargar
+          retention-days: 30
